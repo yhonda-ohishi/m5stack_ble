@@ -6,3 +6,6 @@ bleで [NIPRO NT-100B](https://med.nipro.co.jp/med_eq_category_detail?id=a1U2x00
 
 bleで[HCS-AC01BTWH](https://www.elecom.co.jp/products/HCS-AC01BTWH.html)
 からアルコール検知数値を取得するサンプル
+
+bleで[NBP-1BLE](https://med.nipro.co.jp/med_eq_category_detail?id=a1U2x000000PItOEAW)
+から血圧データを取得するサンプル

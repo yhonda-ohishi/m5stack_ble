@@ -9,6 +9,7 @@ static BLEScan* pBLEScan;
 static BLEAddress* pServerAddress;
 static boolean doConnect = false;
 static boolean doConnectAlc = false;
+static boolean doConnectBld = false;
 static BLEClient* pClient = nullptr;
 
 static BLERemoteService* pRemoteService;
@@ -17,9 +18,11 @@ static BLERemoteCharacteristic* pRemoteCharacteristicWrite;
 static BLERemoteDescriptor* pBLERemoteDescriptor;
 static BLEUUID serviceUUID("00001809-0000-1000-8000-00805f9b34fb");
 static BLEUUID serviceAlcUUID("0000b000-0000-1000-8000-00805f9b34fb");
+static BLEUUID serviceBldUUID("00001810-0000-1000-8000-00805f9b34fb");
 static BLEUUID charUUID("00002a1c-0000-1000-8000-00805f9b34fb");
 static BLEUUID charAlcUUID("0000b001-0000-1000-8000-00805f9b34fb");
 static BLEUUID charAlc2UUID("0000b002-0000-1000-8000-00805f9b34fb");
+static BLEUUID charBldUUID("00002a35-0000-1000-8000-00805f9b34fb");
 static BLEUUID discUUID("00002902-0000-1000-8000-00805f9b34fb");
 const uint8_t indicateOn[] = { 0x2, 0x0 };
 const uint8_t NotifyOn[] = { 0x1, 0x0 };
@@ -39,6 +42,14 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
       doConnectAlc = true;
 
       pServerAddress = new BLEAddress(advertisedDevice.getAddress());
+    } else if (String(advertisedDevice.getName().c_str()).startsWith("NBP-1BLE_")) {
+      if(debug)Serial.printf("NBP-1BLE\n");
+      Serial.printf("{'event':'deviceFound','name':'%s','rssi':%d}\n", advertisedDevice.getName().c_str(), advertisedDevice.getRSSI());
+
+      pServerAddress = new BLEAddress(advertisedDevice.getAddress());
+
+      doConnect = true;
+      doConnectBld = true;
     } else {
     }
   }
@@ -101,10 +112,6 @@ static void notifyCallbackAlc(
 
 static void notifyCallback(
   BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
-  // if (debug) Serial.println("V");
-  // for (int i = 0; i <= length - 1; i++) {
-  //   if (debug) Serial.printf("%X ", pData[i]);
-  // }
   if (debug) Serial.println();
   int foo;
   foo = (int)pData[4] << 24;
@@ -117,7 +124,16 @@ static void notifyCallback(
 
   if (debug) Serial.printf("mantissa:%d,exponential:%d\n", mantissa, exponential);
   Serial.printf("{'event':'temp','val':%f}\n", mantissa * pow(10, exponential));
-  // pClient->disconnect();
+}
+
+static void notifyBldCallback(
+  BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
+  for (int i = 0; i <= length - 1; i++) {
+    if (debug) Serial.printf("%X ", pData[i]);
+  }
+  if (debug) Serial.println();
+  Serial.printf("{'event':blood_pressure','value_max':%d,'value_min':%d,'value_ave':%d,'value_heart_rate':%d}\n", pData[1], pData[3], pData[5], pData[7]);
+  if(debug)Serial.println("notify");
 }
 
 
@@ -128,9 +144,10 @@ class funcClientCallbacks : public BLEClientCallbacks {
       Serial.print("lls");
       pbClient->disconnect();
     }
+    doConnectBld = false;
     doConnect = false;
     doConnectAlc = false;
-    Serial.println("disconnect");
+    Serial.println("{'event':'disconnect'}");
   }
 };
 
@@ -196,6 +213,43 @@ bool connectToAlcServer(BLEAddress* pAddress) {
 }
 
 
+bool connectToBldServer(BLEAddress* pAddress) {
+
+  if (!pClient->connect(*pAddress)) {
+
+    if(debug)Serial.println("diss;");
+    pClient->disconnect();
+    return false;
+  }
+  if (debug) Serial.println("connect");
+  pRemoteService = pClient->getService(serviceBldUUID);
+
+  if (debug) Serial.print("S");
+  if (pRemoteService == nullptr) {
+    if (debug) Serial.println("pRemoteService null");
+    return false;
+  }
+
+  pRemoteCharacteristic = pRemoteService->getCharacteristic(charBldUUID);
+  if (debug) Serial.println("C");
+  if (pRemoteCharacteristic == nullptr) {
+
+    if (debug) Serial.println("pRemoteCharacteristic null");
+    return false;
+  }
+
+  if (debug) Serial.printf("%s\r\n", pRemoteCharacteristic->toString().c_str());
+  pBLERemoteDescriptor = pRemoteCharacteristic->getDescriptor(discUUID);
+  if (debug) Serial.printf("%s\r\n", pBLERemoteDescriptor->toString().c_str());
+  if (debug) Serial.println("N");
+  esp_task_wdt_reset();
+
+  pRemoteCharacteristic->registerForNotify(notifyBldCallback);
+  if (debug) Serial.print("D");
+  pBLERemoteDescriptor->writeValue((uint8_t*)indicateOn, 2, true);
+  if (debug) Serial.println("W");
+  return true;
+}
 
 
 bool connectToServer(BLEAddress* pAddress) {
@@ -239,6 +293,7 @@ void setup() {
   Serial.begin(9600);
   Serial.println("Scanning...");
   pAdvertisedDeviceCallbacks = new MyAdvertisedDeviceCallbacks();
+  BLEDevice::setEncryptionLevel(ESP_BLE_SEC_ENCRYPT);
 
   pClient = BLEDevice::createClient();
   pClient->setClientCallbacks(new funcClientCallbacks());
@@ -276,6 +331,18 @@ void loop() {
       pClient->disconnect();
       doConnectAlc = false;
 
+    } else if (doConnectBld) {
+      if (connectToBldServer(pServerAddress)) {
+        while (doConnectBld) {
+
+          esp_task_wdt_reset();
+          delay(100);
+        }
+      } else {
+        if(debug)Serial.printf("disc notify");
+      }
+      pClient->disconnect();
+      doConnectBld = false;
 
     } else {
       if (connectToServer(pServerAddress)) {
