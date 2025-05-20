@@ -9,3 +9,4 @@ bleで[HCS-AC01BTWH](https://www.elecom.co.jp/products/HCS-AC01BTWH.html)
 
 bleで[NBP-1BLE](https://med.nipro.co.jp/med_eq_category_detail?id=a1U2x000000PItOEAW)
 から血圧データを取得するサンプル
+- paringには、M5stackの電源を入れた後で、NBP-1BLEのbluetoothボタンを長押しが必要
